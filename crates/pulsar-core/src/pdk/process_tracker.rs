@@ -164,7 +164,11 @@ struct ProcessData {
         String,    // new image name
     >,
     argv: Vec<String>,
-    comm: String,
+    original_comm: String,
+    comm_changes: BTreeMap<
+        Timestamp, // exec event timestamp
+        String,    // comm new value
+    >,
     namespaces: Namespaces,
     container: Option<ContainerInfo>,
 }
@@ -190,7 +194,8 @@ impl ProcessTracker {
                 fork_time: Timestamp::from(0),
                 exit_time: None,
                 original_image: "kernel".to_string(),
-                comm: String::new(),
+                original_comm: "kernel".to_string(),
+                comm_changes: BTreeMap::new(),
                 exec_changes: BTreeMap::new(),
                 argv: Vec::new(),
                 namespaces: Namespaces::default(),
@@ -311,8 +316,9 @@ impl ProcessTracker {
                             fork_time: timestamp,
                             exit_time: None,
                             original_image: self.get_image(ppid, timestamp),
-                            comm: self.get_comm(ppid, timestamp),
                             exec_changes: BTreeMap::new(),
+                            original_comm: self.get_comm(ppid, timestamp),
+                            comm_changes: BTreeMap::new(),
                             argv: self
                                 .processes
                                 .get(&ppid)
@@ -354,8 +360,8 @@ impl ProcessTracker {
 
                     if let Some(p) = self.processes.get_mut(&pid) {
                         p.exec_changes.insert(timestamp, std::mem::take(image));
+                        p.comm_changes.insert(timestamp, std::mem::take(comm));
                         p.argv = std::mem::take(argv);
-                        p.comm = std::mem::take(comm);
                         p.namespaces = namespaces;
                         p.container = container;
                     } else {
@@ -440,11 +446,11 @@ impl ProcessTracker {
     fn get_comm(&self, pid: Pid, ts: Timestamp) -> String {
         match self.processes.get(&pid) {
             Some(p) => p
-                .exec_changes
+                .comm_changes
                 .range(..=ts)
                 .next_back()
-                .map(|(_timestamp, image)| image)
-                .unwrap_or(&p.comm)
+                .map(|(_timestamp, comm)| comm)
+                .unwrap_or(&p.original_comm)
                 .clone(),
             None => String::new(),
         }
