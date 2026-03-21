@@ -88,6 +88,7 @@ pub enum ProcessEvent {
     Exec {
         uid: Uid,
         filename: BufferIndex<str>,
+        comm: BufferIndex<str>,
         argc: u32,
         argv: BufferIndex<str>, // 0 separated strings
         namespaces: Namespaces,
@@ -117,6 +118,7 @@ fn extract_parameters(argv: &[u8]) -> Vec<String> {
         .split(|x| *x == 0)
         .map(String::from_utf8_lossy)
         .map(String::from)
+        .filter(|s| !s.is_empty())
         .collect()
 }
 
@@ -184,6 +186,7 @@ pub mod pulsar {
                         ProcessEvent::Exec {
                             uid,
                             ref filename,
+                            ref comm,
                             argc,
                             ref argv,
                             namespaces,
@@ -195,6 +198,7 @@ pub mod pulsar {
                                     &[]
                                 }),
                             );
+
                             if argv.len() != argc as usize {
                                 log::warn!(
                                     "argc ({}) doens't match argv ({:?}) for {}",
@@ -221,6 +225,7 @@ pub mod pulsar {
                                 uid,
                                 // ignoring this error since it will be catched in IntoPayload
                                 image: filename.string(&event.buffer).unwrap_or_default(),
+                                comm: comm.string(&event.buffer).unwrap_or_default(),
                                 timestamp: event.timestamp,
                                 argv,
                                 namespaces,
@@ -287,11 +292,13 @@ pub mod pulsar {
                 },
                 ProcessEvent::Exec {
                     filename,
+                    comm,
                     argc,
                     argv,
                     ..
                 } => Payload::Exec {
                     filename: filename.string(&buffer)?,
+                    comm: comm.string(&buffer)?,
                     argc: argc as usize,
                     argv: extract_parameters(argv.bytes(&buffer)?).into(),
                 },

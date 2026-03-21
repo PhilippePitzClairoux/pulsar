@@ -80,6 +80,7 @@ impl fmt::Display for Event {
 #[derive(Debug, Clone, Serialize, Deserialize, Validatron)]
 pub struct Header {
     pub image: String,
+    pub comm: String,
     pub pid: i32,
     pub parent_pid: i32,
     pub uid: u32,
@@ -215,6 +216,7 @@ pub enum Payload {
     },
     Exec {
         filename: String,
+        comm: String,
         argc: usize,
         argv: Argv,
     },
@@ -316,11 +318,12 @@ impl fmt::Display for Payload {
             }
             Payload::Exec {
                 filename,
+                comm,
                 argc,
                 argv,
             } => write!(
                 f,
-                "Exec {{ filename: {filename}, argc: {argc}, argv: {argv} }}"
+                "Exec {{ filename: {filename}, comm: {comm}, argc: {argc}, argv: {argv} }}"
             ),
             Payload::Exit { exit_code } => write!(f, "Exit {{ exit_code: {exit_code} }}"),
             Payload::ChangeParent { ppid } => write!(f, "Parent changed {{ ppid: {ppid} }}"),

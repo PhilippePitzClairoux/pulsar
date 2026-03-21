@@ -68,6 +68,7 @@ pub async fn setup_events_filter(
             pid: process.pid,
             uid: process.uid,
             image: process.image.to_string(),
+            comm: process.comm.to_string(),
             timestamp: Timestamp::from(0),
             argv: Vec::new(),
             namespaces: process.namespaces,

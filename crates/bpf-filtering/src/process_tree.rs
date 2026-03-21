@@ -23,6 +23,7 @@ pub(crate) struct ProcessData {
     pub(crate) uid: Uid,
     pub(crate) gid: Gid,
     pub(crate) image: String,
+    pub(crate) comm: String,
     pub(crate) parent: Pid,
     pub(crate) namespaces: Namespaces,
     pub(crate) container_id: Option<ContainerId>,
@@ -114,6 +115,10 @@ impl ProcessTree {
                     log::debug!("{}", err);
                     String::new()
                 });
+            let comm = procfs::get_process_comm(pid).unwrap_or_else(|err| {
+                log::debug!("{}", err);
+                String::new()
+            });
             let parent = procfs::get_process_parent_pid(pid).unwrap_or_else(|err| {
                 log::debug!("Error getting parent pid of {pid}: {}", err);
                 Pid::from_raw(1)
@@ -129,6 +134,7 @@ impl ProcessTree {
                     uid,
                     gid,
                     image,
+                    comm,
                     parent,
                     namespaces,
                     container_id,
@@ -147,6 +153,7 @@ impl ProcessTree {
                 uid: UID_0,
                 gid: GID_0,
                 image: String::from("kernel"),
+                comm: String::from("kernel"),
                 parent: PID_0,
                 namespaces,
                 container_id: None,
@@ -193,12 +200,13 @@ impl ProcessTree {
         match parent {
             Some(parent) => {
                 let image = parent.image.to_string();
-
+                let comm = parent.comm.to_string();
                 self.processes.push(ProcessData {
                     pid,
                     uid,
                     gid,
                     image,
+                    comm,
                     parent: ppid,
                     namespaces,
                     container_id,

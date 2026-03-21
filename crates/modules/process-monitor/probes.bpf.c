@@ -28,6 +28,8 @@ char LICENSE[] SEC("license") = "GPL v2";
 
 #define CONTAINER_ID_MAX_BUF 72
 
+#define COMM_BUF_LENGTH 16
+
 #define DOCKER_CONTAINER_ENGINE 0
 #define PODMAN_CONTAINER_ENGINE 1
 #define UNKNOWN_CONTAINER_ENGINE -1
@@ -66,6 +68,7 @@ struct fork_event {
 struct exec_event {
   uid_t uid;
   struct buffer_index filename;
+  struct buffer_index comm;
   int argc;
   struct buffer_index argv;
   struct namespaces namespaces;
@@ -408,6 +411,15 @@ int BPF_PROG(sched_process_exec, struct task_struct *p, pid_t old_pid,
   }
 
   char *image = (char *)&event->buffer.buffer;
+
+  // Here we append comm information to event - this might give us more
+  // context on a processes that dont have an image/executable
+  // (ex.: kthreadd)
+  const char *task_struct_comm = BPF_CORE_READ(p, comm);
+  buffer_index_init(&event->buffer, &event->exec.comm);
+  buffer_append_str(&event->buffer, &event->exec.comm, task_struct_comm,
+                    COMM_BUF_LENGTH, 0);
+
 
   // Check target and whitelist
   tracker_check_rules(&GLOBAL_INTEREST_MAP, &m_rules, p, image);

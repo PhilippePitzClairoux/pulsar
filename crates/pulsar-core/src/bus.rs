@@ -27,10 +27,11 @@ impl Bus {
     pub fn send(&self, event: Event) -> Result<(), BusError> {
         log::trace!(
             target: &format!("event::{}", event.header.source),
-            "{:?} [{}:{}]  {:?}",
+            "{:?} [{}:{}:{}]  {:?}",
             event.header.timestamp,
             event.header.pid,
             event.header.image,
+            event.header.comm,
             event.payload
         );
 

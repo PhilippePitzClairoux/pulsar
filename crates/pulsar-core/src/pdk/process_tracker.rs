@@ -52,6 +52,7 @@ pub enum TrackerUpdate {
         uid: Uid,
         timestamp: Timestamp,
         image: String,
+        comm: String,
         argv: Vec<String>,
         namespaces: Namespaces,
         container_id: Option<ContainerId>,
@@ -93,6 +94,7 @@ pub enum TrackerError {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProcessInfo {
     pub image: String,
+    pub comm: String,
     pub ppid: Pid,
     pub uid: Uid,
     pub gid: Gid,
@@ -162,6 +164,7 @@ struct ProcessData {
         String,    // new image name
     >,
     argv: Vec<String>,
+    comm: String,
     namespaces: Namespaces,
     container: Option<ContainerInfo>,
 }
@@ -187,6 +190,7 @@ impl ProcessTracker {
                 fork_time: Timestamp::from(0),
                 exit_time: None,
                 original_image: "kernel".to_string(),
+                comm: String::new(),
                 exec_changes: BTreeMap::new(),
                 argv: Vec::new(),
                 namespaces: Namespaces::default(),
@@ -307,6 +311,7 @@ impl ProcessTracker {
                             fork_time: timestamp,
                             exit_time: None,
                             original_image: self.get_image(ppid, timestamp),
+                            comm: self.get_comm(ppid, timestamp),
                             exec_changes: BTreeMap::new(),
                             argv: self
                                 .processes
@@ -328,6 +333,7 @@ impl ProcessTracker {
                     uid,
                     timestamp,
                     ref mut image,
+                    ref mut comm,
                     ref mut argv,
                     namespaces,
                     ref container_id,
@@ -349,6 +355,7 @@ impl ProcessTracker {
                     if let Some(p) = self.processes.get_mut(&pid) {
                         p.exec_changes.insert(timestamp, std::mem::take(image));
                         p.argv = std::mem::take(argv);
+                        p.comm = std::mem::take(comm);
                         p.namespaces = namespaces;
                         p.container = container;
                     } else {
@@ -404,6 +411,7 @@ impl ProcessTracker {
         }
         Ok(ProcessInfo {
             image: self.get_image(pid, ts),
+            comm: self.get_comm(pid, ts),
             uid: process.uid,
             gid: process.gid,
             ppid: process.ppid,
@@ -423,6 +431,20 @@ impl ProcessTracker {
                 .next_back()
                 .map(|(_timestamp, image)| image)
                 .unwrap_or(&p.original_image)
+                .clone(),
+            None => String::new(),
+        }
+    }
+
+    /// get comm at a certain point of time
+    fn get_comm(&self, pid: Pid, ts: Timestamp) -> String {
+        match self.processes.get(&pid) {
+            Some(p) => p
+                .exec_changes
+                .range(..=ts)
+                .next_back()
+                .map(|(_timestamp, image)| image)
+                .unwrap_or(&p.comm)
                 .clone(),
             None => String::new(),
         }
@@ -558,6 +580,7 @@ mod tests {
             pid: PID_2,
             uid: UID_USER,
             image: "/bin/after_exec".to_string(),
+            comm: "after_exec".to_string(),
             timestamp: 15.into(),
             argv: Vec::new(),
             namespaces: NAMESPACES_1,
@@ -576,6 +599,7 @@ mod tests {
             process_tracker.get(PID_2, 10.into()).await.unwrap(),
             ProcessInfo {
                 image: String::new(),
+                comm: String::new(),
                 ppid: PID_1,
                 uid: UID_USER,
                 gid: GID_USER,
@@ -589,6 +613,7 @@ mod tests {
             process_tracker.get(PID_2, 15.into()).await.unwrap(),
             ProcessInfo {
                 image: "/bin/after_exec".to_string(),
+                comm: "after_exec".to_string(),
                 ppid: PID_1,
                 uid: UID_USER,
                 gid: GID_USER,
@@ -618,6 +643,7 @@ mod tests {
             pid: PID_2,
             uid: UID_USER,
             image: "/bin/after_exec".to_string(),
+            comm: "after_exec".to_string(),
             timestamp: 15.into(),
             argv: Vec::new(),
             namespaces: NAMESPACES_1,
@@ -640,6 +666,7 @@ mod tests {
             process_tracker.get(PID_2, 13.into()).await,
             Ok(ProcessInfo {
                 image: "".to_string(),
+                comm: "".to_string(),
                 ppid: PID_1,
                 uid: UID_USER,
                 gid: GID_USER,
@@ -653,6 +680,7 @@ mod tests {
             process_tracker.get(PID_2, 17.into()).await,
             Ok(ProcessInfo {
                 image: "/bin/after_exec".to_string(),
+                comm: "after_exec".to_string(),
                 ppid: PID_1,
                 uid: UID_USER,
                 gid: GID_USER,
