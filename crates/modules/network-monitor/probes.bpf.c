@@ -291,7 +291,7 @@ void __always_inline on_socket_bind(void *ctx, struct socket *sock,
                                     struct sockaddr *address, int addrlen) {
   pid_t tgid = tracker_interesting_tgid(&GLOBAL_INTEREST_MAP);
   if (tgid < 0)
-    return;
+    tgid = bpf_get_current_pid_tgid() >> 32; // todo make sure the event is sent even if theres no related process
   int ret;
   struct sock *sk = BPF_CORE_READ(sock, sk);
   struct network_event *event = init_network_event(EVENT_BIND, tgid);
@@ -308,7 +308,7 @@ void __always_inline on_socket_listen(void *ctx, struct socket *sock,
                                       int backlog) {
   pid_t tgid = tracker_interesting_tgid(&GLOBAL_INTEREST_MAP);
   if (tgid < 0)
-    return;
+    tgid = bpf_get_current_pid_tgid() >> 32; // todo make sure the event is sent even if theres no related process
   struct network_event *event = init_network_event(EVENT_LISTEN, tgid);
   if (!event)
     return;
@@ -325,7 +325,7 @@ static __always_inline void on_socket_connect(void *ctx, struct socket *sock,
                                               int addrlen) {
   pid_t tgid = tracker_interesting_tgid(&GLOBAL_INTEREST_MAP);
   if (tgid < 0)
-    return;
+    tgid = bpf_get_current_pid_tgid() >> 32; // todo make sure the event is sent even if theres no related process
   int ret;
   struct sock *sk = BPF_CORE_READ(sock, sk);
   struct network_event *event = init_network_event(EVENT_CONNECT, tgid);
@@ -375,7 +375,7 @@ static __always_inline void on_accept_exit(void *ctx, long ret) {
   // Emit event
   pid_t tgid = tracker_interesting_tgid(&GLOBAL_INTEREST_MAP);
   if (tgid < 0)
-    return;
+    tgid = bpf_get_current_pid_tgid() >> 32; // todo make sure the event is sent even if theres no related process
   struct network_event *event = init_network_event(EVENT_ACCEPT, tgid);
   if (!event)
     return;
@@ -412,9 +412,9 @@ int tcp_set_state(struct pt_regs *regs) {
   // this function may be called after the process has already exited,
   // so we don't want to log errors in case tgid has already been
   // deleted from map_interest
-  if (!tracker_is_interesting(&GLOBAL_INTEREST_MAP, tgid, __func__, false,
-                              true))
-    return 0;
+//  if (!tracker_is_interesting(&GLOBAL_INTEREST_MAP, tgid, __func__, false,
+//                              true))
+//    return 0;
 
   int ret;
   struct sock *sk = (struct sock *)PT_REGS_PARM1(regs);
@@ -424,7 +424,7 @@ int tcp_set_state(struct pt_regs *regs) {
     if (ret) {
       LOG_ERROR("updating tcp_set_state_map");
     }
-    return 0;
+//    return 0;
   }
   if (state != TCP_CLOSE)
     return 0;
@@ -432,7 +432,7 @@ int tcp_set_state(struct pt_regs *regs) {
   pid_t original_pid = tgid;
   if (!id) {
     LOG_DEBUG("can't retrieve the original pid");
-    return 0;
+//    return 0;
   } else {
     original_pid = *id;
   }
