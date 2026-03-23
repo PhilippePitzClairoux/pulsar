@@ -4,7 +4,9 @@ use pulsar_core::pdk::{ModuleContext, ModuleError, NoConfig, SimplePulsarModule}
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::Mutex;
 
 const MODULE_NAME: &str = "contrack-monitor";
 
@@ -34,9 +36,10 @@ impl Display for TransactionKey {
 
 impl PartialEq<Self> for TransactionKey {
     fn eq(&self, other: &Self) -> bool {
-        self.source.ip.eq(&other.source.ip) && self.source.port.eq(&other.source.port) //&&
-        // self.destination.ip.eq(&other.destination.ip) &&
-        // self.destination.port.eq(&other.destination.port)
+        self.source.ip.eq(&other.source.ip) &&
+        self.source.port.eq(&other.source.port) &&
+        self.destination.ip.eq(&other.destination.ip) &&
+        self.destination.port.eq(&other.destination.port)
     }
 }
 impl Eq for TransactionKey {}
@@ -46,8 +49,8 @@ impl Hash for TransactionKey {
         self.source.ip.hash(state);
         self.source.port.hash(state);
 
-        // self.destination.ip.hash(state);
-        // self.destination.port.hash(state);
+        self.destination.ip.hash(state);
+        self.destination.port.hash(state);
     }
 }
 
@@ -99,14 +102,14 @@ impl Display for TransactionState {
 pub struct ContrackModule;
 
 pub struct ContrackModuleState {
-    contrack: HashMap<TransactionKey, TransactionStats>,
+    contrack: Arc<Mutex<HashMap<TransactionKey, TransactionStats>>>,
 }
 
 impl SimplePulsarModule for ContrackModule {
     type Config = NoConfig;
     type State = ContrackModuleState;
 
-    const MODULE_NAME: &'static str = "proxy-module";
+    const MODULE_NAME: &'static str = MODULE_NAME;
     const DEFAULT_ENABLED: bool = true;
 
     async fn init_state(
@@ -115,7 +118,7 @@ impl SimplePulsarModule for ContrackModule {
         _ctx: &ModuleContext,
     ) -> Result<Self::State, ModuleError> {
         Ok(Self::State {
-            contrack: HashMap::new(),
+            contrack: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -125,19 +128,20 @@ impl SimplePulsarModule for ContrackModule {
         state: &mut Self::State,
         _ctx: &ModuleContext,
     ) -> Result<(), ModuleError> {
-        let pid = event.header().pid;
-
         match event.payload() {
             Payload::Accept {
                 source,
                 destination,
             } => {
                 let key = TransactionKey::from(source, destination);
-                log::info!("{} {}", generate_prefix(event, TransactionState::NEW), &key);
-                state
-                    .contrack
-                    .get_mut(&key)
-                    .get_or_insert(&mut TransactionStats::new());
+                let mut lock = state.contrack.lock().await;
+
+                if !lock.contains_key(&key) {
+                    log::info!("{} {}", generate_prefix(event, TransactionState::NEW), &key);
+                    lock.insert(key, TransactionStats::new());
+                }
+
+                drop(lock);
             }
             Payload::Receive {
                 source,
@@ -146,11 +150,14 @@ impl SimplePulsarModule for ContrackModule {
                 ..
             } => {
                 let key = TransactionKey::from(source, destination);
-                state
-                    .contrack
-                    .get_mut(&key)
-                    .get_or_insert(&mut TransactionStats::new())
+                let mut lock = state.contrack.lock().await;
+
+                lock
+                    .entry(key)
+                    .or_insert(TransactionStats::new())
                     .received += len;
+
+                drop(lock);
             }
             Payload::Send {
                 source,
@@ -159,36 +166,32 @@ impl SimplePulsarModule for ContrackModule {
                 ..
             } => {
                 let key = TransactionKey::from(source, destination);
-                state
-                    .contrack
-                    .get_mut(&key)
-                    .get_or_insert(&mut TransactionStats::new())
+                let mut lock = state.contrack.lock().await;
+
+                lock
+                    .entry(key)
+                    .or_insert(TransactionStats::new())
                     .sent += len;
+
+                drop(lock);
             }
             Payload::Close {
                 source,
                 destination,
             } => {
-                log::info!(
-                    "{} {} {}",
-                    generate_prefix(event, TransactionState::CLOSED),
-                    source,
-                    destination
-                );
-
                 let key = TransactionKey::from(source, destination);
-                match state.contrack.get_mut(&key) {
+                let mut lock = state.contrack.lock().await;
+
+                match lock.get_mut(&key) {
                     Some(s) => {
-                        log::info!(
-                            "{} {} - {}",
-                            generate_prefix(event, TransactionState::CLOSED),
-                            &key,
-                            s
+                        log::info!("{} {} - {}",
+                            generate_prefix(event, TransactionState::CLOSED), &key, s
                         );
-                        state.contrack.remove(&key);
+                        lock.remove(&key);
                     }
                     None => (),
                 }
+                drop(lock);
             }
             _ => (),
         }

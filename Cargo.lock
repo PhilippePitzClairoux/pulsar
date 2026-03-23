@@ -565,6 +565,7 @@ dependencies = [
  "chrono",
  "log",
  "pulsar-core",
+ "tokio",
 ]
 
 [[package]]

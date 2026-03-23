@@ -10,6 +10,7 @@ bpf-common = { workspace = true }
 pulsar-core = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["full"] }
 
 [build-dependencies]
 bpf-builder = { workspace = true }
